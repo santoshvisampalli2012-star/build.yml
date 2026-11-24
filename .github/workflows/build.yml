@@ -250,9 +250,14 @@ jobs:
               private var player: MediaPlayer? = null
 
               // Offline wake-word listener (no account or key needed)
+              // Reacts only to a finished phrase that STARTS with "jarvis" (so video/TV audio is ignored)
               private val voskListener = object : org.vosk.android.RecognitionListener {
-                  override fun onPartialResult(h: String?) { if (h?.contains("jarvis") == true) onWake() }
-                  override fun onResult(h: String?) { if (h?.contains("jarvis") == true) onWake() }
+                  override fun onPartialResult(h: String?) {}
+                  override fun onResult(h: String?) {
+                      val t = try { org.json.JSONObject(h ?: "").optString("text") } catch (e: Exception) { "" }
+                      val m = Regex("^(?:(?:hey|ok|okay|hi) )?jarvis(?: (.+))?$").find(t) ?: return
+                      onWake(m.groupValues[1])
+                  }
                   override fun onFinalResult(h: String?) {}
                   override fun onError(e: Exception?) {}
                   override fun onTimeout() {}
@@ -327,7 +332,7 @@ jobs:
                               copyAssets("model-en-us", File(dir, "model-en-us"))
                               ok.writeText("1")
                           }
-                          val rec = Recognizer(Model(File(dir, "model-en-us").path), 16000f, "[\"jarvis\", \"[unk]\"]")
+                          val rec = Recognizer(Model(File(dir, "model-en-us").path), 16000f)
                           val ss = SpeechService(rec, 16000f)
                           main.post {
                               vosk = ss
@@ -340,11 +345,12 @@ jobs:
                   }.start()
               }
 
-              private fun onWake() {
+              private fun onWake(rest: String) {
                   if (busy) return
                   busy = true
                   main.post {
                       vosk?.stop()
+                      if (rest.isNotBlank()) { think(rest); return@post }
                       JarvisState.status.value = "LISTENING"
                       main.postDelayed({
                           stt.startListening(
@@ -387,10 +393,4 @@ jobs:
                   val l = q.trim().lowercase()
                   if (Regex("^(pause|stop|resume|continue)( the)?( music| playing| song)?$").matches(l)) {
                       val p = player ?: return "Nothing is playing, sir."
-                      if (l.startsWith("resume") || l.startsWith("continue")) p.start()
-                      else if (l.startsWith("pause")) p.pause()
-                      else { p.release(); player = null }
-                      return "Done, sir."
-                  }
-                  searchInApp(q)?.let { return it }
-                  Regex("^play\\s+(.+)$").
+           
